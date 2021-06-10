@@ -22,7 +22,8 @@ void vgg16_cpu::predict(const uint8_t* const image, int batch) {
 
   // MaxPool2d
   pool(C1_2_feature_map, S1_feature_map, batch, C1_2_channel, C1_2_size, C1_2_size);
-
+  
+  print_C1();
   //////////BLOCK 2/////////////////////////////////
   // ZeroPad2d
   pad(S1_feature_map, S1_feature_map_padded, batch, S1_channel, S1_size, S1_size, conv2_1_padding_size);

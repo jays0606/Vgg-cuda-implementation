@@ -1,0 +1,11 @@
+hello_cpu
+hello_cuda
+predict
+
+tmp/
+build/*.o
+data/
+result/
+*.txt
+model/data_dir
+!.gitkeep
