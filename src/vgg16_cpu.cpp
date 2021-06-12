@@ -1,9 +1,11 @@
 #include "vgg16_cpu.h"
+using namespace std;
 
 void vgg16_cpu::predict(const uint8_t* const image, int batch) {
   // ToTensor and Normalize
-  normalize(image, input);
 
+  normalize(image, input);
+  
   //////////BLOCK 1/////////////////////////////////
   // ZeroPad2d
   pad(input, input_padded, batch, input_channel, input_size, input_size, conv1_1_padding_size);
@@ -12,8 +14,10 @@ void vgg16_cpu::predict(const uint8_t* const image, int batch) {
        input_size+2*conv1_1_padding_size, conv1_1_in_channel, conv1_1_out_channel, conv1_1_kernel_size);
 
   relu(C1_1_feature_map, batch * C1_1_channel * C1_1_size * C1_1_size);
+
   // ZeroPad2d
   pad(C1_1_feature_map, C1_1_feature_map_padded, batch, C1_1_channel, C1_1_size, C1_1_size, conv1_2_padding_size);
+
   // Conv2d
   conv(C1_1_feature_map_padded, C1_2_feature_map, conv1_2_weight, conv1_2_bias, batch, C1_1_size+2*conv1_2_padding_size,
        C1_1_size+2*conv1_2_padding_size, conv1_2_in_channel, conv1_2_out_channel, conv1_2_kernel_size);
@@ -23,91 +27,105 @@ void vgg16_cpu::predict(const uint8_t* const image, int batch) {
   // MaxPool2d
   pool(C1_2_feature_map, S1_feature_map, batch, C1_2_channel, C1_2_size, C1_2_size);
   
-  print_C1();
-  //////////BLOCK 2/////////////////////////////////
-  // ZeroPad2d
-  pad(S1_feature_map, S1_feature_map_padded, batch, S1_channel, S1_size, S1_size, conv2_1_padding_size);
-  // Conv2d
-  conv(S1_feature_map_padded, C2_1_feature_map, conv2_1_weight, conv2_1_bias, batch, S1_size+2*conv2_1_padding_size,
-       S1_size+2*conv2_1_padding_size, conv2_1_in_channel, conv2_1_out_channel, conv2_1_kernel_size);
-  relu(C2_1_feature_map, batch * C2_1_channel * C2_1_size * C2_1_size);
-  // ZeroPad2d
-  pad(C2_1_feature_map, C2_1_feature_map_padded, batch, C2_1_channel, C2_1_size, C2_1_size, conv2_2_padding_size);
-  // Conv2d
-  conv(C2_1_feature_map_padded, C2_2_feature_map, conv2_2_weight, conv2_2_bias, batch, C2_1_size+2*conv2_2_padding_size,
-       C2_1_size+2*conv2_2_padding_size, conv2_2_in_channel, conv2_2_out_channel, conv2_2_kernel_size);
-  relu(C2_2_feature_map, batch * C2_2_channel * C2_2_size * C2_2_size);
-  // MaxPool2d
-  pool(C2_2_feature_map, S2_feature_map, batch, C2_2_channel, C2_2_size, C2_2_size);
+  cout << "CPU Pool 1" << endl;
+    for (int b=0; b<1; b++){
+      int base = b*C1_1_channel*S1_size*S1_size;
+      for (int c=0; c<S1_channel; c+=16){
+        base += c*S1_size*S1_size;
+        for (int i=0; i<10; i++){
+            for (int j=0; j<10; j++)
+                cout << ceil(S1_feature_map[base + i*S1_size + j]*10)/10.0 << " ";
+            cout << endl;
+        } cout << endl;
+      }
+  } cout << endl; 
 
-  //////////BLOCK 3/////////////////////////////////
-  // ZeroPad2d
-  pad(S2_feature_map, S2_feature_map_padded, batch, S2_channel, S2_size, S2_size, conv3_1_padding_size);
-  // conv2d
-  conv(S2_feature_map_padded, C3_1_feature_map, conv3_1_weight, conv3_1_bias, batch, S2_size+2*conv3_1_padding_size,
-       S2_size+2*conv3_1_padding_size, conv3_1_in_channel, conv3_1_out_channel, conv3_1_kernel_size);
-  relu(C3_1_feature_map, batch * C3_1_channel * C3_1_size * C3_1_size);
-  // ZeroPad2d
-  pad(C3_1_feature_map, C3_1_feature_map_padded, batch, C3_1_channel, C3_1_size, C3_1_size, conv3_2_padding_size);
-  // conv2d
-  conv(C3_1_feature_map_padded, C3_2_feature_map, conv3_2_weight, conv3_2_bias, batch, C3_1_size+2*conv3_2_padding_size,
-       C3_1_size+2*conv3_2_padding_size, conv3_2_in_channel, conv3_2_out_channel, conv3_2_kernel_size);
-  relu(C3_2_feature_map, batch * C3_2_channel * C3_2_size * C3_2_size);
-  // ZeroPad2d
-  pad(C3_2_feature_map, C3_2_feature_map_padded, batch, C3_2_channel, C3_2_size, C3_2_size, conv3_3_padding_size);
-  // conv2d
-  conv(C3_2_feature_map_padded, C3_3_feature_map, conv3_3_weight, conv3_3_bias, batch, C3_2_size+2*conv3_3_padding_size,
-       C3_2_size+2*conv3_3_padding_size, conv3_3_in_channel, conv3_3_out_channel, conv3_3_kernel_size);
-  relu(C3_3_feature_map, batch * C3_3_channel * C3_3_size * C3_3_size);
-  // MaxPool2d
-  pool(C3_3_feature_map, S3_feature_map, batch, C3_3_channel, C3_3_size, C3_3_size);
+  // std::cout << "C1: " << std::endl; print_C1();
 
-  //////////BLOCK 4/////////////////////////////////
-  // ZeroPad2d
-  pad(S3_feature_map, S3_feature_map_padded, batch, S3_channel, S3_size, S3_size, conv4_1_padding_size);
-  // conv2d
-  conv(S3_feature_map_padded, C4_1_feature_map, conv4_1_weight, conv4_1_bias, batch, S3_size+2*conv4_1_padding_size,
-       S3_size+2*conv4_1_padding_size, conv4_1_in_channel, conv4_1_out_channel, conv4_1_kernel_size);
-  relu(C4_1_feature_map, batch * C4_1_channel * C4_1_size * C4_1_size);
-  // ZeroPad2d
-  pad(C4_1_feature_map, C4_1_feature_map_padded, batch, C4_1_channel, C4_1_size, C4_1_size, conv4_2_padding_size);
-  // conv2d
-  conv(C4_1_feature_map_padded, C4_2_feature_map, conv4_2_weight, conv4_2_bias, batch, C4_1_size+2*conv4_2_padding_size,
-       C4_1_size+2*conv4_2_padding_size, conv4_2_in_channel, conv4_2_out_channel, conv4_2_kernel_size);
-  relu(C4_2_feature_map, batch * C4_2_channel * C4_2_size * C4_2_size);
-  // ZeroPad2d
-  pad(C4_2_feature_map, C4_2_feature_map_padded, batch, C4_2_channel, C4_2_size, C4_2_size, conv4_3_padding_size);
-  // conv2d
-  conv(C4_2_feature_map_padded, C4_3_feature_map, conv4_3_weight, conv4_3_bias, batch, C4_2_size+2*conv4_3_padding_size,
-       C4_2_size+2*conv4_3_padding_size, conv4_3_in_channel, conv4_3_out_channel, conv4_3_kernel_size);
-  relu(C4_3_feature_map, batch * C4_3_channel * C4_3_size * C4_3_size);
-  // MaxPool2d
-  pool(C4_3_feature_map, S4_feature_map, batch, C4_3_channel, C4_3_size, C4_3_size);
+  // //////////BLOCK 2/////////////////////////////////
+  // // ZeroPad2d
+  // pad(S1_feature_map, S1_feature_map_padded, batch, S1_channel, S1_size, S1_size, conv2_1_padding_size);
+  // // Conv2d
+  // conv(S1_feature_map_padded, C2_1_feature_map, conv2_1_weight, conv2_1_bias, batch, S1_size+2*conv2_1_padding_size,
+  //      S1_size+2*conv2_1_padding_size, conv2_1_in_channel, conv2_1_out_channel, conv2_1_kernel_size);
+  // relu(C2_1_feature_map, batch * C2_1_channel * C2_1_size * C2_1_size);
+  // // ZeroPad2d
+  // pad(C2_1_feature_map, C2_1_feature_map_padded, batch, C2_1_channel, C2_1_size, C2_1_size, conv2_2_padding_size);
+  // // Conv2d
+  // conv(C2_1_feature_map_padded, C2_2_feature_map, conv2_2_weight, conv2_2_bias, batch, C2_1_size+2*conv2_2_padding_size,
+  //      C2_1_size+2*conv2_2_padding_size, conv2_2_in_channel, conv2_2_out_channel, conv2_2_kernel_size);
+  // relu(C2_2_feature_map, batch * C2_2_channel * C2_2_size * C2_2_size);
+  // // MaxPool2d
+  // pool(C2_2_feature_map, S2_feature_map, batch, C2_2_channel, C2_2_size, C2_2_size);
 
-  //////////BLOCK 5/////////////////////////////////
-  // ZeroPad2d
-  pad(S4_feature_map, S4_feature_map_padded, batch, S4_channel, S4_size, S4_size, conv5_1_padding_size);
-  // conv2d
-  conv(S4_feature_map_padded, C5_1_feature_map, conv5_1_weight, conv5_1_bias, batch, S4_size+2*conv5_1_padding_size,
-       S4_size+2*conv5_1_padding_size, conv5_1_in_channel, conv5_1_out_channel, conv5_1_kernel_size);
-  relu(C5_1_feature_map, batch * C5_1_channel * C5_1_size * C5_1_size);
-  // ZeroPad2d
-  pad(C5_1_feature_map, C5_1_feature_map_padded, batch, C5_1_channel, C5_1_size, C5_1_size, conv5_2_padding_size);
-  // conv2d
-  conv(C5_1_feature_map_padded, C5_2_feature_map, conv5_2_weight, conv5_2_bias, batch, C5_1_size+2*conv5_2_padding_size,
-       C5_1_size+2*conv5_2_padding_size, conv5_2_in_channel, conv5_2_out_channel, conv5_2_kernel_size);
-  relu(C5_2_feature_map, batch * C5_2_channel * C5_2_size * C5_2_size);
-  // ZeroPad2d
-  pad(C5_2_feature_map, C5_2_feature_map_padded, batch, C5_2_channel, C5_2_size, C5_2_size, conv5_3_padding_size);
-  // conv2d
-  conv(C5_2_feature_map_padded, C5_3_feature_map, conv5_3_weight, conv5_3_bias, batch, C5_2_size+2*conv5_3_padding_size,
-       C5_2_size+2*conv5_3_padding_size, conv5_3_in_channel, conv5_3_out_channel, conv5_3_kernel_size);
-  relu(C5_3_feature_map, batch * C5_3_channel * C5_3_size * C5_3_size);
-  // MaxPool2d
-  pool(C5_3_feature_map, S5_feature_map, batch, C5_3_channel, C5_3_size, C5_3_size);
-  // Linear
-  fc(S5_feature_map, output, fc1_weight, fc1_bias, batch, fc1_in_channel,
-     fc1_out_channel);
+  // //////////BLOCK 3/////////////////////////////////
+  // // ZeroPad2d
+  // pad(S2_feature_map, S2_feature_map_padded, batch, S2_channel, S2_size, S2_size, conv3_1_padding_size);
+  // // conv2d
+  // conv(S2_feature_map_padded, C3_1_feature_map, conv3_1_weight, conv3_1_bias, batch, S2_size+2*conv3_1_padding_size,
+  //      S2_size+2*conv3_1_padding_size, conv3_1_in_channel, conv3_1_out_channel, conv3_1_kernel_size);
+  // relu(C3_1_feature_map, batch * C3_1_channel * C3_1_size * C3_1_size);
+  // // ZeroPad2d
+  // pad(C3_1_feature_map, C3_1_feature_map_padded, batch, C3_1_channel, C3_1_size, C3_1_size, conv3_2_padding_size);
+  // // conv2d
+  // conv(C3_1_feature_map_padded, C3_2_feature_map, conv3_2_weight, conv3_2_bias, batch, C3_1_size+2*conv3_2_padding_size,
+  //      C3_1_size+2*conv3_2_padding_size, conv3_2_in_channel, conv3_2_out_channel, conv3_2_kernel_size);
+  // relu(C3_2_feature_map, batch * C3_2_channel * C3_2_size * C3_2_size);
+  // // ZeroPad2d
+  // pad(C3_2_feature_map, C3_2_feature_map_padded, batch, C3_2_channel, C3_2_size, C3_2_size, conv3_3_padding_size);
+  // // conv2d
+  // conv(C3_2_feature_map_padded, C3_3_feature_map, conv3_3_weight, conv3_3_bias, batch, C3_2_size+2*conv3_3_padding_size,
+  //      C3_2_size+2*conv3_3_padding_size, conv3_3_in_channel, conv3_3_out_channel, conv3_3_kernel_size);
+  // relu(C3_3_feature_map, batch * C3_3_channel * C3_3_size * C3_3_size);
+  // // MaxPool2d
+  // pool(C3_3_feature_map, S3_feature_map, batch, C3_3_channel, C3_3_size, C3_3_size);
+
+  // //////////BLOCK 4/////////////////////////////////
+  // // ZeroPad2d
+  // pad(S3_feature_map, S3_feature_map_padded, batch, S3_channel, S3_size, S3_size, conv4_1_padding_size);
+  // // conv2d
+  // conv(S3_feature_map_padded, C4_1_feature_map, conv4_1_weight, conv4_1_bias, batch, S3_size+2*conv4_1_padding_size,
+  //      S3_size+2*conv4_1_padding_size, conv4_1_in_channel, conv4_1_out_channel, conv4_1_kernel_size);
+  // relu(C4_1_feature_map, batch * C4_1_channel * C4_1_size * C4_1_size);
+  // // ZeroPad2d
+  // pad(C4_1_feature_map, C4_1_feature_map_padded, batch, C4_1_channel, C4_1_size, C4_1_size, conv4_2_padding_size);
+  // // conv2d
+  // conv(C4_1_feature_map_padded, C4_2_feature_map, conv4_2_weight, conv4_2_bias, batch, C4_1_size+2*conv4_2_padding_size,
+  //      C4_1_size+2*conv4_2_padding_size, conv4_2_in_channel, conv4_2_out_channel, conv4_2_kernel_size);
+  // relu(C4_2_feature_map, batch * C4_2_channel * C4_2_size * C4_2_size);
+  // // ZeroPad2d
+  // pad(C4_2_feature_map, C4_2_feature_map_padded, batch, C4_2_channel, C4_2_size, C4_2_size, conv4_3_padding_size);
+  // // conv2d
+  // conv(C4_2_feature_map_padded, C4_3_feature_map, conv4_3_weight, conv4_3_bias, batch, C4_2_size+2*conv4_3_padding_size,
+  //      C4_2_size+2*conv4_3_padding_size, conv4_3_in_channel, conv4_3_out_channel, conv4_3_kernel_size);
+  // relu(C4_3_feature_map, batch * C4_3_channel * C4_3_size * C4_3_size);
+  // // MaxPool2d
+  // pool(C4_3_feature_map, S4_feature_map, batch, C4_3_channel, C4_3_size, C4_3_size);
+
+  // //////////BLOCK 5/////////////////////////////////
+  // // ZeroPad2d
+  // pad(S4_feature_map, S4_feature_map_padded, batch, S4_channel, S4_size, S4_size, conv5_1_padding_size);
+  // // conv2d
+  // conv(S4_feature_map_padded, C5_1_feature_map, conv5_1_weight, conv5_1_bias, batch, S4_size+2*conv5_1_padding_size,
+  //      S4_size+2*conv5_1_padding_size, conv5_1_in_channel, conv5_1_out_channel, conv5_1_kernel_size);
+  // relu(C5_1_feature_map, batch * C5_1_channel * C5_1_size * C5_1_size);
+  // // ZeroPad2d
+  // pad(C5_1_feature_map, C5_1_feature_map_padded, batch, C5_1_channel, C5_1_size, C5_1_size, conv5_2_padding_size);
+  // // conv2d
+  // conv(C5_1_feature_map_padded, C5_2_feature_map, conv5_2_weight, conv5_2_bias, batch, C5_1_size+2*conv5_2_padding_size,
+  //      C5_1_size+2*conv5_2_padding_size, conv5_2_in_channel, conv5_2_out_channel, conv5_2_kernel_size);
+  // relu(C5_2_feature_map, batch * C5_2_channel * C5_2_size * C5_2_size);
+  // // ZeroPad2d
+  // pad(C5_2_feature_map, C5_2_feature_map_padded, batch, C5_2_channel, C5_2_size, C5_2_size, conv5_3_padding_size);
+  // // conv2d
+  // conv(C5_2_feature_map_padded, C5_3_feature_map, conv5_3_weight, conv5_3_bias, batch, C5_2_size+2*conv5_3_padding_size,
+  //      C5_2_size+2*conv5_3_padding_size, conv5_3_in_channel, conv5_3_out_channel, conv5_3_kernel_size);
+  // relu(C5_3_feature_map, batch * C5_3_channel * C5_3_size * C5_3_size);
+  // // MaxPool2d
+  // pool(C5_3_feature_map, S5_feature_map, batch, C5_3_channel, C5_3_size, C5_3_size);
+  // // Linear
+  // fc(S5_feature_map, output, fc1_weight, fc1_bias, batch, fc1_in_channel,
+  //    fc1_out_channel);
 }
 
 void vgg16_cpu::normalize(const uint8_t* const image, float* input) {
