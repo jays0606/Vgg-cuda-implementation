@@ -84,29 +84,29 @@ int main(int argc, char** argv) {
   // Predict image with CPU
  
     // hard-coded result of code below.
-  // int predict_cpu[batch] = {3,8,8,0,6,9,1,2,3,1,0,9,5,7,9,8,5,7,8,6,9,9,4,9,4,2,9,0,9,6,6,5,9,3,9,9,4,1,9,5,4,6,5,6,0,9,3,9,7,9,9,8,9,3,8,8,7,3,3,3,7,3,9,3,6,9,1,2,3,9,9,6,8,8,0,2,9,3,3,8,8,1,1,7,2,9,9,9,8,9,0,9,8,6,4,3,6,0,0,7,4,5,6,3,1,1,9,6,8,7,9,0,2,2,1,3,0,4,2,7,8,3,1,2,8,8,8,3};
+  int predict_cpu[batch] = {3,8,8,0,6,9,1,2,3,1,0,9,5,7,9,8,5,7,8,6,9,9,4,9,4,2,9,0,9,6,6,5,9,3,9,9,4,1,9,5,4,6,5,6,0,9,3,9,7,9,9,8,9,3,8,8,7,3,3,3,7,3,9,3,6,9,1,2,3,9,9,6,8,8,0,2,9,3,3,8,8,1,1,7,2,9,9,9,8,9,0,9,8,6,4,3,6,0,0,7,4,5,6,3,1,1,9,6,8,7,9,0,2,2,1,3,0,4,2,7,8,3,1,2,8,8,8,3};
 
-  int predict_cpu[batch]; // if you want to test the code below, uncomment this line and comment hard-coded result.
-  vgg16_cpu* net_cpu = new vgg16_cpu(batch);
-  {
-    // Start cuda timer
-    cudaEvent_t start, stop;
-    float cudaElapsedTime;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    cudaEventRecord(start, 0);
-    // Predict image with CPU
-    net_cpu->load_parameters(parameter_path);
-    net_cpu->predict(image, batch); 
-    // Stop cuda timer
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&cudaElapsedTime, start, stop);
-    std::cout << "[INFO] CPU  elapsed time is " << cudaElapsedTime << " msec"
-              << std::endl;
-  }
-  net_cpu->classify(predict_cpu, batch);  // softmax left out from time checks
-  delete net_cpu;
+  // int predict_cpu[batch]; // if you want to test the code below, uncomment this line and comment hard-coded result.
+  // vgg16_cpu* net_cpu = new vgg16_cpu(batch);
+  // {
+  //   // Start cuda timer
+  //   cudaEvent_t start, stop;
+  //   float cudaElapsedTime;
+  //   cudaEventCreate(&start);
+  //   cudaEventCreate(&stop);
+  //   cudaEventRecord(start, 0);
+  //   // Predict image with CPU
+  //   net_cpu->load_parameters(parameter_path);
+  //   net_cpu->predict(image, batch); 
+  //   // Stop cuda timer
+  //   cudaEventRecord(stop, 0);
+  //   cudaEventSynchronize(stop);
+  //   cudaEventElapsedTime(&cudaElapsedTime, start, stop);
+  //   std::cout << "[INFO] CPU  elapsed time is " << cudaElapsedTime << " msec"
+  //             << std::endl;
+  // }
+  // net_cpu->classify(predict_cpu, batch);  // softmax left out from time checks
+  // delete net_cpu;
   
   // Predict with CUDA
   int predict_cuda[batch];
