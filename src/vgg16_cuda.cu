@@ -42,6 +42,28 @@ __global__ void pad(float* input, float* output, int C, int H, int W, int P, int
   output[output_index] = input[input_base];
 }
 
+__global__ void conv_shared(float* input, float* output, float* weight, float* bias, int H, int W, int IC, int OC, int K, int W_grid)
+{
+    int b = blockIdx.x; // mini_batch
+    int oc = blockIdx.y; // output channel
+    int h = (blockIdx.z / W_grid)*TILE_WIDTH + threadIdx.y; // output height
+    int w = (blockIdx.z % W_grid)*TILE_WIDTH + threadIdx.x; // output width
+
+    int H_OUT = H - (K - 1); // 32
+    int W_OUT = W - (K - 1); // 32
+    int output_index = b * (OC * H_OUT * W_OUT) + oc * (H_OUT * W_OUT) + h * W_OUT + w;
+
+    float val = 0;
+    for (int ic=0; ic<IC; ic++){
+        int input_base = b * (IC * H * W) + ic * (H * W) + h * (W) + w;
+        int kernel_base = oc * (IC * K * K) + ic * (K * K);
+        for (int kh = 0; kh < K; kh++)
+            for (int kw = 0; kw < K; kw++) 
+                val += input[input_base + kh * (W) + kw] * weight[kernel_base + kh * (K) + kw];
+        }
+    output[output_index] = bias[oc] + val;
+}
+
 __global__ void conv(float* input, float* output, float* weight, float* bias, int H, int W, int IC, int OC, int K, int W_grid)
 {
     int b = blockIdx.x; // mini_batch
@@ -119,14 +141,7 @@ void vgg16_cuda::predict(int batch) {
     normalize <<< dimGrid_0, dimBlock_0 >>> (d_image, d_input, input_channel, input_size, input_size, ceil(input_size/TILE_WIDTH));
     
     //////////BLOCK 1/////////////////////////////////
-    // TODO: Implement pad
-    // TODO: Implement conv1_1
-    // TODO: Implement relu
-    // TODO: Implement pad
-    // TODO: Implement conv1_2
-    // TODO: Implement relu
-    // TODO: Implement pool
-    
+
     pad <<< dimGrid_0, dimBlock_0 >>> (d_input, d_input_padded, input_channel, input_size, input_size, conv1_1_padding_size, ceil(input_size/TILE_WIDTH));
         
     dim3 dimGrid_1_1(batch, C1_1_channel, ceil((C1_1_size*C1_1_size)/(TILE_WIDTH*TILE_WIDTH))); // batch*64*4
@@ -147,16 +162,9 @@ void vgg16_cuda::predict(int batch) {
     pool <<< dimGrid_1_3, dimBlock_1_3 >>> (d_C1_2_feature_map, d_S1_feature_map, S1_channel, S1_size, S1_size, ceil(S1_size/TILE_WIDTH));
     
     // //////////BLOCK 2/////////////////////////////////
-    // // TODO: Implement pad
-    // // TODO: Implement conv2_1
-    // // TODO: Implement relu
-    // // TODO: Implement pad
-    // // TODO: Implement conv2_2
-    // // TODO: Implement relu
-    // // TODO: Implement pool
-
-    dim3 dimGrid2_0(batch, S1_channel, ceil((S1_size*S1_size)/(TILE_WIDTH*TILE_WIDTH))); // batch*64*1
-    dim3 dimBlock2_0(TILE_WIDTH,TILE_WIDTH, 1);
+        
+    dim3 dimGrid2_0(batch, S1_channel, ceil((S1_size*S1_size)/(TILE_WIDTH*TILE_WIDTH))); // batch*64*1    dim3 dimBlock2_0(TILE_WIDTH,TILE_WIDTH, 1);
+    dim3 dimBlock2_0(TILE_WIDTH, TILE_WIDTH, 1); 
     pad <<< dimGrid2_0, dimBlock2_0 >>> (d_S1_feature_map, d_S1_feature_map_padded, S1_channel, S1_size, S1_size, conv2_1_padding_size, ceil(S1_size/TILE_WIDTH));
 
     dim3 dimGrid_2_1(batch, C2_1_channel, ceil((C2_1_size*C2_1_size)/(TILE_WIDTH*TILE_WIDTH))); // batch*128*1
@@ -177,17 +185,7 @@ void vgg16_cuda::predict(int batch) {
     pool <<< dimGrid_2_3, dimBlock_2_3 >>> (d_C2_2_feature_map, d_S2_feature_map, S2_channel, S2_size, S2_size, ceil(S2_size/TILE_WIDTH_HALF));
 
     // //////////BLOCK 3/////////////////////////////////
-    // // TODO: Implement pad
-    // // TODO: Implement conv3_1
-    // // TODO: Implement relu
-    // // TODO: Implement pad
-    // // TODO: Implement conv3_2
-    // // TODO: Implement relu
-    // // TODO: Implement pad
-    // // TODO: Implement conv3_3
-    // // TODO: Implement relu
-    // // TODO: Implement pool
-    
+
     dim3 dimGrid3_0(batch, S2_channel, ceil((S2_size*S2_size)/(TILE_WIDTH_HALF*TILE_WIDTH_HALF))); // batch*128*1
     dim3 dimBlock3_0(TILE_WIDTH_HALF,TILE_WIDTH_HALF, 1); // 8*8*1
     pad <<< dimGrid3_0, dimBlock3_0 >>> (d_S2_feature_map, d_S2_feature_map_padded, S2_channel, S2_size, S2_size, conv3_1_padding_size, ceil(S2_size/TILE_WIDTH_HALF));
@@ -217,17 +215,7 @@ void vgg16_cuda::predict(int batch) {
     pool <<< dimGrid3_4, dimBlock3_4 >>> (d_C3_3_feature_map, d_S3_feature_map, S3_channel, S3_size, S3_size, ceil(S3_size/TILE_WIDTH_QUARTER));
     
     // //////////BLOCK 4/////////////////////////////////
-    // // TODO: Implement pad
-    // // TODO: Implement conv4_1
-    // // TODO: Implement relu
-    // // TODO: Implement pad
-    // // TODO: Implement conv4_2
-    // // TODO: Implement relu
-    // // TODO: Implement pad
-    // // TODO: Implement conv4_3
-    // // TODO: Implement relu
-    // // TODO: Implement pool
-    
+
     dim3 dimGrid4_0(batch, S3_channel, ceil((S3_size*S3_size)/(TILE_WIDTH_QUARTER*TILE_WIDTH_QUARTER))); // batch*256*1
     dim3 dimBlock4_0(TILE_WIDTH_QUARTER,TILE_WIDTH_QUARTER, 1); // 4*4*1
     pad <<< dimGrid4_0, dimBlock4_0 >>> (d_S3_feature_map, d_S3_feature_map_padded, S3_channel, S3_size, S3_size, conv4_1_padding_size, ceil(S3_size/TILE_WIDTH_QUARTER));
@@ -257,16 +245,6 @@ void vgg16_cuda::predict(int batch) {
     pool <<< dimGrid4_4, dimBlock4_4 >>> (d_C4_3_feature_map, d_S4_feature_map, S4_channel, S4_size, S4_size, ceil(S4_size/TILE_WIDTH_EIGHTH));
 
     //////////BLOCK 5/////////////////////////////////
-    // TODO: Implement pad
-    // TODO: Implement conv5_1
-    // TODO: Implement relu
-    // TODO: Implement pad
-    // TODO: Implement conv5_2
-    // TODO: Implement relu
-    // TODO: Implement pad
-    // TODO: Implement conv5_3
-    // TODO: Implement relu
-    // TODO: Implement pool
 
     dim3 dimGrid5_0(batch, S4_channel, ceil((S4_size*S4_size)/(TILE_WIDTH_EIGHTH*TILE_WIDTH_EIGHTH))); // batch*512*1
     dim3 dimBlock5_0(TILE_WIDTH_EIGHTH,TILE_WIDTH_EIGHTH, 1); // 2*2*1
@@ -296,11 +274,10 @@ void vgg16_cuda::predict(int batch) {
     dim3 dimBlock5_4(1,1,1); 
     pool <<< dimGrid5_4, dimBlock5_4 >>> (d_C5_3_feature_map, d_S5_feature_map, S5_channel, S5_size, S5_size, 1);
     
-    // // TODO: Implement fc1
-    // // TODO: Implement relu
+    ////////// fc /////////////////////////////////
+    
     dim3 dimGrid6(batch, fc1_out_channel, 1); // batch*10*1
     dim3 dimBlock6(1,1,1); 
-
     fc <<< dimGrid6, dimBlock6 >>> (d_S5_feature_map, d_output, d_fc1_weight, d_fc1_bias, fc1_in_channel, fc1_out_channel);
     // relu <<< dimGrid6, dimBlock6 >>> (d_output, fc1_out_channel, 1, 1, 1);
 
