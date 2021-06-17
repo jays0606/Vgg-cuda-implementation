@@ -73,13 +73,13 @@ int main(int argc, char** argv) {
     exit(-1);
   }
   // Save image
-  for (int b = 0; b < batch; b++) {
-    std::string img_path =
-        format_string(img_path_template, data_offset + b,
-                      label_dict.find(label[b])->second.c_str());
-    std::cout << "[INFO] Save image to " << img_path << std::endl;
-    save_image(img_path, image + b * (IMG_CHANNEL * IMG_HEIGHT * IMG_WIDTH));
-  }
+  // for (int b = 0; b < batch; b++) {
+  //   std::string img_path =
+  //       format_string(img_path_template, data_offset + b,
+  //                     label_dict.find(label[b])->second.c_str());
+  //   std::cout << "[INFO] Save image to " << img_path << std::endl;
+  //   save_image(img_path, image + b * (IMG_CHANNEL * IMG_HEIGHT * IMG_WIDTH));
+  // }
 
   // Predict image with CPU
  
@@ -133,15 +133,15 @@ int main(int argc, char** argv) {
   net_cuda->classify(predict_cuda,
                      batch);  // softmax is left out from execution time
   // Print predicted class with CPU, CUDA and label
-  std::cout << "[INFO] CUDA predict is as following:" << std::endl;
-  printf("CPU:CLASS(NUMBER,T/F),CUDA:CLASS(NUMBER,T/F),Label:CLASS(NUMBER)\n");
-  for (int b = 0; b < batch; b++) {
-    printf("CPU: %10s(%d,%d), CUDA: %10s(%d,%d), Label: %10s(%d)\n",
-           label_dict[predict_cpu[b]].c_str(), predict_cpu[b],
-           predict_cpu[b] == label[b], label_dict[predict_cuda[b]].c_str(),
-           predict_cuda[b], predict_cuda[b] == label[b],
-           label_dict[label[b]].c_str(), label[b]);
-  }
+  // std::cout << "[INFO] CUDA predict is as following:" << std::endl;
+  // printf("CPU:CLASS(NUMBER,T/F),CUDA:CLASS(NUMBER,T/F),Label:CLASS(NUMBER)\n");
+  // for (int b = 0; b < batch; b++) {
+  //   printf("CPU: %10s(%d,%d), CUDA: %10s(%d,%d), Label: %10s(%d)\n",
+  //          label_dict[predict_cpu[b]].c_str(), predict_cpu[b],
+  //          predict_cpu[b] == label[b], label_dict[predict_cuda[b]].c_str(),
+  //          predict_cuda[b], predict_cuda[b] == label[b],
+  //          label_dict[label[b]].c_str(), label[b]);
+  // }
   // Check sanity naively
   bool sanity = true;
   int cpu_error = 0;
