@@ -1,9 +1,10 @@
 #include "vgg16_cuda.h"
-#define TILE_WIDTH 16
+
+#define TILE_WIDTH_1 16
 #define TILE_WIDTH_2 16
-#define TILE_WIDTH_HALF 8
-#define TILE_WIDTH_QUARTER 4
-#define TILE_WIDTH_EIGHTH 2
+#define TILE_WIDTH_3 8
+#define TILE_WIDTH_4 4
+#define TILE_WIDTH_5 2
 #define FLT_MIN -3.40282e+38
 #define FLT_EPSILON 1.19209e-07
 using namespace std;
@@ -87,39 +88,6 @@ __global__ void conv_shared(float* input, float* output, float* weight, float* b
         val += X_shared[(h0+2)*X_TILE_WIDTH + w0+1] * W_shared[2*K + 1];
         val += X_shared[(h0+2)*X_TILE_WIDTH + w0+2] * W_shared[2*K + 2];
         __syncthreads();
-
-        // for (int kh = 0; kh < K; kh++) // Calculate
-        //     for (int kw = 0; kw < K; kw++) 
-        //         val += X_shared[(h0+kh)*X_TILE_WIDTH + w0+kw] * W_shared[kh*K + kw];
-        // __syncthreads();
-        
-        // int kernel_base = oc * (IC * K * K) + ic * (K * K);
-        // val += X_shared[(h0)*X_TILE_WIDTH + w0] * weight[kernel_base + 0];
-        // val += X_shared[(h0)*X_TILE_WIDTH + w0+1] * weight[kernel_base + 1];
-        // val += X_shared[(h0)*X_TILE_WIDTH + w0+2] * weight[kernel_base + 2];
-
-        // val += X_shared[(h0+1)*X_TILE_WIDTH + w0] * weight[kernel_base + 1*K];
-        // val += X_shared[(h0+1)*X_TILE_WIDTH + w0+1] * weight[kernel_base + 1*K + 1];
-        // val += X_shared[(h0+1)*X_TILE_WIDTH + w0+2] * weight[kernel_base + 1*K + 2];
-
-        // val += X_shared[(h0+2)*X_TILE_WIDTH + w0] * weight[kernel_base + 2*K];
-        // val += X_shared[(h0+2)*X_TILE_WIDTH + w0+1] * weight[kernel_base + 2*K + 1];
-        // val += X_shared[(h0+2)*X_TILE_WIDTH + w0+2] * weight[kernel_base + 2*K + 2];
-        // __syncthreads();
-
-        // int input_base = b * (IC * H * W) + ic * (H * W) + h * (W) + w;
-        // val += input[input_base + 0] * W_shared[0];
-        // val += input[input_base + 1] * W_shared[1];
-        // val += input[input_base + 2] * W_shared[2];
-
-        // val += input[input_base + 1*W + 0] * W_shared[1*K];
-        // val += input[input_base + 1*W + 1] * W_shared[1*K + 1];
-        // val += input[input_base + 1*W + 2] * W_shared[1*K + 2];
-
-        // val += input[input_base + 2*W + 0] * W_shared[2*K];
-        // val += input[input_base + 2*W + 1] * W_shared[2*K + 1];
-        // val += input[input_base + 2*W + 2] * W_shared[2*K + 2];
-        // __syncthreads();
         }
     output[output_index] = bias[oc] + val;    
 }
@@ -224,34 +192,35 @@ void print(int channel, int width, float* feature_map){
 }
 void vgg16_cuda::predict(int batch) {
 
-    dim3 dimGrid_0(batch, input_channel, ceil((input_size*input_size)/(TILE_WIDTH*TILE_WIDTH))); 
-    dim3 dimBlock_0(TILE_WIDTH, TILE_WIDTH, 1); 
-    normalize <<< dimGrid_0, dimBlock_0 >>> (d_image, d_input, input_channel, input_size, input_size, ceil(input_size/TILE_WIDTH), TILE_WIDTH);
+    dim3 dimGrid_0(batch, input_channel, ceil((input_size*input_size)/(input_size*input_size))); 
+    dim3 dimBlock_0(input_size, input_size, 1); 
+    normalize <<< dimGrid_0, dimBlock_0 >>> (d_image, d_input, input_channel, input_size, input_size, ceil(input_size/input_size), input_size);
     
     //////////BLOCK 1/////////////////////////////////
-    pad <<< dimGrid_0, dimBlock_0 >>> (d_input, d_input_padded, input_channel, input_size, input_size, conv1_1_padding_size, ceil(input_size/TILE_WIDTH), TILE_WIDTH);
+    pad <<< dimGrid_0, dimBlock_0 >>> (d_input, d_input_padded, input_channel, input_size, input_size, conv1_1_padding_size, ceil(input_size/input_size), input_size);
         
-    dim3 dimGrid_1_1(batch, C1_1_channel, ceil((C1_1_size*C1_1_size)/(TILE_WIDTH*TILE_WIDTH))); // batch*64*4
-    dim3 dimBlock_1_1(TILE_WIDTH, TILE_WIDTH, 1); 
+    dim3 dimGrid_1_1(batch, C1_1_channel, ceil((C1_1_size*C1_1_size)/(TILE_WIDTH_1*TILE_WIDTH_1))); // batch*64*4
+    dim3 dimBlock_1_1(TILE_WIDTH_1, TILE_WIDTH_1, 1);
+     
     // size_t shmem_size_1 = sizeof(float) * ((TILE_WIDTH + conv1_1_kernel_size-1)*(TILE_WIDTH+conv1_1_kernel_size-1) + conv1_1_kernel_size*conv1_1_kernel_size); // (H-K+1)*(H-K+1) + K*K
     // conv_shared <<< dimGrid_1_1, dimBlock_1_1, shmem_size_1 >>> (d_input_padded, d_C1_1_feature_map, d_conv1_1_weight, d_conv1_1_bias, input_size+2*conv1_1_padding_size,
     //     input_size+2*conv1_1_padding_size, conv1_1_in_channel, conv1_1_out_channel, conv1_1_kernel_size, ceil(C1_1_size/TILE_WIDTH), TILE_WIDTH);
     conv <<< dimGrid_1_1, dimBlock_1_1 >>> (d_input_padded, d_C1_1_feature_map, d_conv1_1_weight, d_conv1_1_bias, input_size+2*conv1_1_padding_size,
-                                    input_size+2*conv1_1_padding_size, conv1_1_in_channel, conv1_1_out_channel, conv1_1_kernel_size, ceil(C1_1_size/TILE_WIDTH), TILE_WIDTH);
-    relu <<< dimGrid_1_1, dimBlock_1_1 >>> (d_C1_1_feature_map, C1_1_channel, C1_1_size, C1_1_size, ceil(C1_1_size/TILE_WIDTH), TILE_WIDTH);
-    pad <<< dimGrid_1_1, dimBlock_1_1 >>> (d_C1_1_feature_map, d_C1_1_feature_map_padded, C1_1_channel, C1_1_size, C1_1_size, conv1_2_padding_size, ceil(C1_1_size/TILE_WIDTH), TILE_WIDTH);
-
-    dim3 dimGrid_1_2(batch, C1_2_channel, ceil((C1_2_size*C1_2_size)/(TILE_WIDTH*TILE_WIDTH)));  // batch*64*4
-    dim3 dimBlock_1_2(TILE_WIDTH, TILE_WIDTH, 1); 
+                                    input_size+2*conv1_1_padding_size, conv1_1_in_channel, conv1_1_out_channel, conv1_1_kernel_size, ceil(C1_1_size/TILE_WIDTH_1), TILE_WIDTH_1);
+    relu <<< dimGrid_1_1, dimBlock_1_1 >>> (d_C1_1_feature_map, C1_1_channel, C1_1_size, C1_1_size, ceil(C1_1_size/TILE_WIDTH_1), TILE_WIDTH_1);
+    pad <<< dimGrid_1_1, dimBlock_1_1 >>> (d_C1_1_feature_map, d_C1_1_feature_map_padded, C1_1_channel, C1_1_size, C1_1_size, conv1_2_padding_size, ceil(C1_1_size/TILE_WIDTH_1), TILE_WIDTH_1);
+        
+    dim3 dimGrid_1_2(batch, C1_2_channel, ceil((C1_2_size*C1_2_size)/(TILE_WIDTH_1*TILE_WIDTH_1)));  // batch*64*4
+    dim3 dimBlock_1_2(TILE_WIDTH_1, TILE_WIDTH_1, 1); 
     // conv_shared <<< dimGrid_1_2, dimBlock_1_2, shmem_size_1 >>> (d_C1_1_feature_map_padded, d_C1_2_feature_map, d_conv1_2_weight, d_conv1_2_bias, C1_1_size+2*conv1_2_padding_size,
     //     C1_1_size+2*conv1_2_padding_size, conv1_2_in_channel, conv1_2_out_channel, conv1_2_kernel_size, ceil(C1_2_size/TILE_WIDTH), TILE_WIDTH);
     conv <<< dimGrid_1_2, dimBlock_1_2>>> (d_C1_1_feature_map_padded, d_C1_2_feature_map, d_conv1_2_weight, d_conv1_2_bias, C1_1_size+2*conv1_2_padding_size,
-                                    C1_1_size+2*conv1_2_padding_size, conv1_2_in_channel, conv1_2_out_channel, conv1_2_kernel_size, ceil(C1_2_size/TILE_WIDTH), TILE_WIDTH);
-    relu <<< dimGrid_1_2, dimBlock_1_2 >>> (d_C1_2_feature_map, C1_2_channel, C1_2_size, C1_2_size, C1_2_size/TILE_WIDTH, TILE_WIDTH);
+                                    C1_1_size+2*conv1_2_padding_size, conv1_2_in_channel, conv1_2_out_channel, conv1_2_kernel_size, ceil(C1_2_size/TILE_WIDTH_1), TILE_WIDTH_1);
+    relu <<< dimGrid_1_2, dimBlock_1_2 >>> (d_C1_2_feature_map, C1_2_channel, C1_2_size, C1_2_size, C1_2_size/TILE_WIDTH_1, TILE_WIDTH_1);
     
-    dim3 dimGrid_1_3(batch, S1_channel, ceil((S1_size*S1_size)/(TILE_WIDTH*TILE_WIDTH))); // batch*64*1
-    dim3 dimBlock_1_3(TILE_WIDTH, TILE_WIDTH, 1); 
-    pool <<< dimGrid_1_3, dimBlock_1_3 >>> (d_C1_2_feature_map, d_S1_feature_map, S1_channel, S1_size, S1_size, ceil(S1_size/TILE_WIDTH), TILE_WIDTH);
+    dim3 dimGrid_1_3(batch, S1_channel, ceil((S1_size*S1_size)/(TILE_WIDTH_1*TILE_WIDTH_1))); // batch*64*1
+    dim3 dimBlock_1_3(TILE_WIDTH_1, TILE_WIDTH_1, 1); 
+    pool <<< dimGrid_1_3, dimBlock_1_3 >>> (d_C1_2_feature_map, d_S1_feature_map, S1_channel, S1_size, S1_size, ceil(S1_size/TILE_WIDTH_1), TILE_WIDTH_1);
     
     // //////////BLOCK 2/////////////////////////////////
         
@@ -277,116 +246,116 @@ void vgg16_cuda::predict(int batch) {
                                     C2_1_size+2*conv2_2_padding_size, conv2_2_in_channel, conv2_2_out_channel, conv2_2_kernel_size, ceil(C2_2_size/TILE_WIDTH_2), TILE_WIDTH_2);
     relu <<< dimGrid_2_2, dimBlock_2_2 >>> (d_C2_2_feature_map, C2_2_channel, C2_2_size, C2_2_size, ceil(C2_2_size/TILE_WIDTH_2), TILE_WIDTH_2);
         
-    dim3 dimGrid_2_3(batch, S2_channel, ceil((S2_size*S2_size)/(TILE_WIDTH_HALF*TILE_WIDTH_HALF))); // batch*128*1
-    dim3 dimBlock_2_3(TILE_WIDTH_HALF, TILE_WIDTH_HALF, 1); // 8*8*1
-    pool <<< dimGrid_2_3, dimBlock_2_3 >>> (d_C2_2_feature_map, d_S2_feature_map, S2_channel, S2_size, S2_size, ceil(S2_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
+    dim3 dimGrid_2_3(batch, S2_channel, ceil((S2_size*S2_size)/(TILE_WIDTH_3*TILE_WIDTH_3))); // batch*128*1
+    dim3 dimBlock_2_3(TILE_WIDTH_3, TILE_WIDTH_3, 1); // 8*8*1
+    pool <<< dimGrid_2_3, dimBlock_2_3 >>> (d_C2_2_feature_map, d_S2_feature_map, S2_channel, S2_size, S2_size, ceil(S2_size/TILE_WIDTH_3), TILE_WIDTH_3);
 
     // //////////BLOCK 3/////////////////////////////////
 
-    dim3 dimGrid3_0(batch, S2_channel, ceil((S2_size*S2_size)/(TILE_WIDTH_HALF*TILE_WIDTH_HALF))); // batch*128*1
-    dim3 dimBlock3_0(TILE_WIDTH_HALF,TILE_WIDTH_HALF, 1); // 8*8*1
-    pad <<< dimGrid3_0, dimBlock3_0 >>> (d_S2_feature_map, d_S2_feature_map_padded, S2_channel, S2_size, S2_size, conv3_1_padding_size, ceil(S2_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
+    dim3 dimGrid3_0(batch, S2_channel, ceil((S2_size*S2_size)/(TILE_WIDTH_3*TILE_WIDTH_3))); // batch*128*1
+    dim3 dimBlock3_0(TILE_WIDTH_3,TILE_WIDTH_3, 1); // 8*8*1
+    pad <<< dimGrid3_0, dimBlock3_0 >>> (d_S2_feature_map, d_S2_feature_map_padded, S2_channel, S2_size, S2_size, conv3_1_padding_size, ceil(S2_size/TILE_WIDTH_3), TILE_WIDTH_3);
     
-    dim3 dimGrid3_1(batch, C3_1_channel, ceil((C3_1_size*C3_1_size)/(TILE_WIDTH_HALF*TILE_WIDTH_HALF))); // batch*256*1
-    dim3 dimBlock3_1(TILE_WIDTH_HALF,TILE_WIDTH_HALF, 1);
+    dim3 dimGrid3_1(batch, C3_1_channel, ceil((C3_1_size*C3_1_size)/(TILE_WIDTH_3*TILE_WIDTH_3))); // batch*256*1
+    dim3 dimBlock3_1(TILE_WIDTH_3,TILE_WIDTH_3, 1);
     // size_t shmem_size_3 = sizeof(float) * ((TILE_WIDTH_HALF + conv3_1_kernel_size-1)*(TILE_WIDTH_HALF+conv3_1_kernel_size-1) + conv3_1_kernel_size*conv3_1_kernel_size);
     // conv_shared <<< dimGrid3_1, dimBlock3_1, shmem_size_3 >>> (d_S2_feature_map_padded, d_C3_1_feature_map, d_conv3_1_weight, d_conv3_1_bias, S2_size+2*conv3_1_padding_size,
     //     S2_size+2*conv3_1_padding_size, conv3_1_in_channel, conv3_1_out_channel, conv3_1_kernel_size, ceil(C3_1_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
     conv <<< dimGrid3_1, dimBlock3_1 >>> (d_S2_feature_map_padded, d_C3_1_feature_map, d_conv3_1_weight, d_conv3_1_bias, S2_size+2*conv3_1_padding_size,
-                                    S2_size+2*conv3_1_padding_size, conv3_1_in_channel, conv3_1_out_channel, conv3_1_kernel_size, ceil(C3_1_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
-    relu <<< dimGrid3_1, dimBlock3_1 >>> (d_C3_1_feature_map, C3_1_channel, C3_1_size, C3_1_size, C3_1_size/TILE_WIDTH_HALF, TILE_WIDTH_HALF);
-    pad <<< dimGrid3_1, dimBlock3_1 >>> (d_C3_1_feature_map, d_C3_1_feature_map_padded, C3_1_channel, C3_1_size, C3_1_size, conv3_2_padding_size, ceil(C3_1_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
+                                    S2_size+2*conv3_1_padding_size, conv3_1_in_channel, conv3_1_out_channel, conv3_1_kernel_size, ceil(C3_1_size/TILE_WIDTH_3), TILE_WIDTH_3);
+    relu <<< dimGrid3_1, dimBlock3_1 >>> (d_C3_1_feature_map, C3_1_channel, C3_1_size, C3_1_size, C3_1_size/TILE_WIDTH_3, TILE_WIDTH_3);
+    pad <<< dimGrid3_1, dimBlock3_1 >>> (d_C3_1_feature_map, d_C3_1_feature_map_padded, C3_1_channel, C3_1_size, C3_1_size, conv3_2_padding_size, ceil(C3_1_size/TILE_WIDTH_3), TILE_WIDTH_3);
 
-    dim3 dimGrid3_2(batch, C3_2_channel, ceil((C3_2_size*C3_2_size)/(TILE_WIDTH_HALF*TILE_WIDTH_HALF))); // batch*256*1
-    dim3 dimBlock3_2(TILE_WIDTH_HALF,TILE_WIDTH_HALF, 1);
+    dim3 dimGrid3_2(batch, C3_2_channel, ceil((C3_2_size*C3_2_size)/(TILE_WIDTH_3*TILE_WIDTH_3))); // batch*256*1
+    dim3 dimBlock3_2(TILE_WIDTH_3,TILE_WIDTH_3, 1);
     // conv_shared <<< dimGrid3_2, dimBlock3_2, shmem_size_3 >>> (d_C3_1_feature_map_padded, d_C3_2_feature_map, d_conv3_2_weight, d_conv3_2_bias, C3_1_size+2*conv3_2_padding_size,
     //     C3_1_size+2*conv3_2_padding_size, conv3_2_in_channel, conv3_2_out_channel, conv3_2_kernel_size, ceil(C3_2_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
     conv <<< dimGrid3_2, dimBlock3_2 >>> (d_C3_1_feature_map_padded, d_C3_2_feature_map, d_conv3_2_weight, d_conv3_2_bias, C3_1_size+2*conv3_2_padding_size,
-                                    C3_1_size+2*conv3_2_padding_size, conv3_2_in_channel, conv3_2_out_channel, conv3_2_kernel_size, ceil(C3_2_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
-    relu <<< dimGrid3_2, dimBlock3_2 >>> (d_C3_2_feature_map, C3_2_channel, C3_2_size, C3_2_size, ceil(C3_2_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
-    pad <<< dimGrid3_2, dimBlock3_2 >>> (d_C3_2_feature_map, d_C3_2_feature_map_padded, C3_2_channel, C3_2_size, C3_2_size, conv3_3_padding_size, ceil(C3_2_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
+                                    C3_1_size+2*conv3_2_padding_size, conv3_2_in_channel, conv3_2_out_channel, conv3_2_kernel_size, ceil(C3_2_size/TILE_WIDTH_3), TILE_WIDTH_3);
+    relu <<< dimGrid3_2, dimBlock3_2 >>> (d_C3_2_feature_map, C3_2_channel, C3_2_size, C3_2_size, ceil(C3_2_size/TILE_WIDTH_3), TILE_WIDTH_3);
+    pad <<< dimGrid3_2, dimBlock3_2 >>> (d_C3_2_feature_map, d_C3_2_feature_map_padded, C3_2_channel, C3_2_size, C3_2_size, conv3_3_padding_size, ceil(C3_2_size/TILE_WIDTH_3), TILE_WIDTH_3);
 
-    dim3 dimGrid3_3(batch, C3_3_channel, ceil((C3_3_size*C3_3_size)/(TILE_WIDTH_HALF*TILE_WIDTH_HALF))); // batch*256*1
-    dim3 dimBlock3_3(TILE_WIDTH_HALF,TILE_WIDTH_HALF, 1);
+    dim3 dimGrid3_3(batch, C3_3_channel, ceil((C3_3_size*C3_3_size)/(TILE_WIDTH_3*TILE_WIDTH_3))); // batch*256*1
+    dim3 dimBlock3_3(TILE_WIDTH_3,TILE_WIDTH_3, 1);
     // conv_shared <<< dimGrid3_3, dimBlock3_3, shmem_size_3 >>> (d_C3_2_feature_map_padded, d_C3_3_feature_map, d_conv3_3_weight, d_conv3_3_bias, C3_2_size+2*conv3_3_padding_size,
     //     C3_2_size+2*conv3_3_padding_size, conv3_3_in_channel, conv3_3_out_channel, conv3_3_kernel_size, ceil(C3_3_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
     conv <<< dimGrid3_3, dimBlock3_3 >>> (d_C3_2_feature_map_padded, d_C3_3_feature_map, d_conv3_3_weight, d_conv3_3_bias, C3_2_size+2*conv3_3_padding_size,
-                                    C3_2_size+2*conv3_3_padding_size, conv3_3_in_channel, conv3_3_out_channel, conv3_3_kernel_size, ceil(C3_3_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
-    relu <<< dimGrid3_3, dimBlock3_3 >>> (d_C3_3_feature_map, C3_3_channel, C3_3_size, C3_3_size, ceil(C3_3_size/TILE_WIDTH_HALF), TILE_WIDTH_HALF);
+                                    C3_2_size+2*conv3_3_padding_size, conv3_3_in_channel, conv3_3_out_channel, conv3_3_kernel_size, ceil(C3_3_size/TILE_WIDTH_3), TILE_WIDTH_3);
+    relu <<< dimGrid3_3, dimBlock3_3 >>> (d_C3_3_feature_map, C3_3_channel, C3_3_size, C3_3_size, ceil(C3_3_size/TILE_WIDTH_3), TILE_WIDTH_3);
 
-    dim3 dimGrid3_4(batch, S3_channel, ceil((S3_size*S3_size)/(TILE_WIDTH_QUARTER*TILE_WIDTH_QUARTER))); // batch*256*1
-    dim3 dimBlock3_4(TILE_WIDTH_QUARTER,TILE_WIDTH_QUARTER, 1); // 4*4*1
-    pool <<< dimGrid3_4, dimBlock3_4 >>> (d_C3_3_feature_map, d_S3_feature_map, S3_channel, S3_size, S3_size, ceil(S3_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
+    dim3 dimGrid3_4(batch, S3_channel, ceil((S3_size*S3_size)/(TILE_WIDTH_4*TILE_WIDTH_4))); // batch*256*1
+    dim3 dimBlock3_4(TILE_WIDTH_4,TILE_WIDTH_4, 1); // 4*4*1
+    pool <<< dimGrid3_4, dimBlock3_4 >>> (d_C3_3_feature_map, d_S3_feature_map, S3_channel, S3_size, S3_size, ceil(S3_size/TILE_WIDTH_4), TILE_WIDTH_4);
     
     // //////////BLOCK 4/////////////////////////////////
 
-    dim3 dimGrid4_0(batch, S3_channel, ceil((S3_size*S3_size)/(TILE_WIDTH_QUARTER*TILE_WIDTH_QUARTER))); // batch*256*1
-    dim3 dimBlock4_0(TILE_WIDTH_QUARTER,TILE_WIDTH_QUARTER, 1); // 4*4*1
-    size_t shmem_size_4 = sizeof(float) * ((TILE_WIDTH_QUARTER + conv4_1_kernel_size-1)*(TILE_WIDTH_QUARTER+conv4_1_kernel_size-1) + conv4_1_kernel_size*conv4_1_kernel_size);
-    pad <<< dimGrid4_0, dimBlock4_0 >>> (d_S3_feature_map, d_S3_feature_map_padded, S3_channel, S3_size, S3_size, conv4_1_padding_size, ceil(S3_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
+    dim3 dimGrid4_0(batch, S3_channel, ceil((S3_size*S3_size)/(TILE_WIDTH_4*TILE_WIDTH_4))); // batch*256*1
+    dim3 dimBlock4_0(TILE_WIDTH_4,TILE_WIDTH_4, 1); // 4*4*1
+    size_t shmem_size_4 = sizeof(float) * ((TILE_WIDTH_4 + conv4_1_kernel_size-1)*(TILE_WIDTH_4+conv4_1_kernel_size-1) + conv4_1_kernel_size*conv4_1_kernel_size);
+    pad <<< dimGrid4_0, dimBlock4_0 >>> (d_S3_feature_map, d_S3_feature_map_padded, S3_channel, S3_size, S3_size, conv4_1_padding_size, ceil(S3_size/TILE_WIDTH_4), TILE_WIDTH_4);
              
-    dim3 dimGrid4_1(batch, C4_1_channel, ceil((C4_1_size*C4_1_size)/(TILE_WIDTH_QUARTER*TILE_WIDTH_QUARTER))); // batch*256*1
-    dim3 dimBlock4_1(TILE_WIDTH_QUARTER,TILE_WIDTH_QUARTER, 1); // 4*4*1
+    dim3 dimGrid4_1(batch, C4_1_channel, ceil((C4_1_size*C4_1_size)/(TILE_WIDTH_4*TILE_WIDTH_4))); // batch*256*1
+    dim3 dimBlock4_1(TILE_WIDTH_4,TILE_WIDTH_4, 1); // 4*4*1
     // conv_shared <<< dimGrid4_1, dimBlock4_1, shmem_size_4 >>> (d_S3_feature_map_padded, d_C4_1_feature_map, d_conv4_1_weight, d_conv4_1_bias, S3_size+2*conv4_1_padding_size,
     //     S3_size+2*conv4_1_padding_size, conv4_1_in_channel, conv4_1_out_channel, conv4_1_kernel_size, ceil(C4_1_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
     conv <<< dimGrid4_1, dimBlock4_1 >>> (d_S3_feature_map_padded, d_C4_1_feature_map, d_conv4_1_weight, d_conv4_1_bias, S3_size+2*conv4_1_padding_size,
-                                    S3_size+2*conv4_1_padding_size, conv4_1_in_channel, conv4_1_out_channel, conv4_1_kernel_size, ceil(C4_1_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
-    relu <<< dimGrid4_1, dimBlock4_1 >>> (d_C4_1_feature_map, C4_1_channel, C4_1_size, C4_1_size, ceil(C4_1_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
-    pad <<< dimGrid4_1, dimBlock4_1 >>> (d_C4_1_feature_map, d_C4_1_feature_map_padded, C4_1_channel, C4_1_size, C4_1_size, conv4_2_padding_size, ceil(C4_1_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
+                                    S3_size+2*conv4_1_padding_size, conv4_1_in_channel, conv4_1_out_channel, conv4_1_kernel_size, ceil(C4_1_size/TILE_WIDTH_4), TILE_WIDTH_4);
+    relu <<< dimGrid4_1, dimBlock4_1 >>> (d_C4_1_feature_map, C4_1_channel, C4_1_size, C4_1_size, ceil(C4_1_size/TILE_WIDTH_4), TILE_WIDTH_4);
+    pad <<< dimGrid4_1, dimBlock4_1 >>> (d_C4_1_feature_map, d_C4_1_feature_map_padded, C4_1_channel, C4_1_size, C4_1_size, conv4_2_padding_size, ceil(C4_1_size/TILE_WIDTH_4), TILE_WIDTH_4);
     
-    dim3 dimGrid4_2(batch, C4_2_channel, ceil((C4_2_size*C4_2_size)/(TILE_WIDTH_QUARTER*TILE_WIDTH_QUARTER))); // batch*256*1
-    dim3 dimBlock4_2(TILE_WIDTH_QUARTER,TILE_WIDTH_QUARTER, 1); // 4*4*1
+    dim3 dimGrid4_2(batch, C4_2_channel, ceil((C4_2_size*C4_2_size)/(TILE_WIDTH_4*TILE_WIDTH_4))); // batch*256*1
+    dim3 dimBlock4_2(TILE_WIDTH_4,TILE_WIDTH_4, 1); // 4*4*1
     // conv_shared <<< dimGrid4_2, dimBlock4_2,  shmem_size_4>>> (d_C4_1_feature_map_padded, d_C4_2_feature_map, d_conv4_2_weight, d_conv4_2_bias, C4_1_size+2*conv4_2_padding_size,
     //     C4_1_size+2*conv4_2_padding_size, conv4_2_in_channel, conv4_2_out_channel, conv4_2_kernel_size, ceil(C4_2_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
     conv <<< dimGrid4_2, dimBlock4_2 >>> (d_C4_1_feature_map_padded, d_C4_2_feature_map, d_conv4_2_weight, d_conv4_2_bias, C4_1_size+2*conv4_2_padding_size,
-                                    C4_1_size+2*conv4_2_padding_size, conv4_2_in_channel, conv4_2_out_channel, conv4_2_kernel_size, ceil(C4_2_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
-    relu <<< dimGrid4_2, dimBlock4_2 >>> (d_C4_2_feature_map, C4_2_channel, C4_2_size, C4_2_size, ceil(C4_2_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);    
-    pad <<< dimGrid4_2, dimBlock4_2 >>> (d_C4_2_feature_map, d_C4_2_feature_map_padded, C4_2_channel, C4_2_size, C4_2_size, conv4_3_padding_size, ceil(C4_2_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
+                                    C4_1_size+2*conv4_2_padding_size, conv4_2_in_channel, conv4_2_out_channel, conv4_2_kernel_size, ceil(C4_2_size/TILE_WIDTH_4), TILE_WIDTH_4);
+    relu <<< dimGrid4_2, dimBlock4_2 >>> (d_C4_2_feature_map, C4_2_channel, C4_2_size, C4_2_size, ceil(C4_2_size/TILE_WIDTH_4), TILE_WIDTH_4);    
+    pad <<< dimGrid4_2, dimBlock4_2 >>> (d_C4_2_feature_map, d_C4_2_feature_map_padded, C4_2_channel, C4_2_size, C4_2_size, conv4_3_padding_size, ceil(C4_2_size/TILE_WIDTH_4), TILE_WIDTH_4);
 
-    dim3 dimGrid4_3(batch, C4_3_channel, ceil((C4_3_size*C4_3_size)/(TILE_WIDTH_QUARTER*TILE_WIDTH_QUARTER))); // batch*256*1
-    dim3 dimBlock4_3(TILE_WIDTH_QUARTER,TILE_WIDTH_QUARTER, 1); // 4*4*1
+    dim3 dimGrid4_3(batch, C4_3_channel, ceil((C4_3_size*C4_3_size)/(TILE_WIDTH_4*TILE_WIDTH_4))); // batch*256*1
+    dim3 dimBlock4_3(TILE_WIDTH_4,TILE_WIDTH_4, 1); // 4*4*1
     // conv_shared <<< dimGrid4_3, dimBlock4_3, shmem_size_4 >>> (d_C4_2_feature_map_padded, d_C4_3_feature_map, d_conv4_3_weight, d_conv4_3_bias, C4_2_size+2*conv4_3_padding_size,
     //     C4_2_size+2*conv4_3_padding_size, conv4_3_in_channel, conv4_3_out_channel, conv4_3_kernel_size, ceil(C4_3_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
     conv <<< dimGrid4_3, dimBlock4_3 >>> (d_C4_2_feature_map_padded, d_C4_3_feature_map, d_conv4_3_weight, d_conv4_3_bias, C4_2_size+2*conv4_3_padding_size,
-                                    C4_2_size+2*conv4_3_padding_size, conv4_3_in_channel, conv4_3_out_channel, conv4_3_kernel_size, ceil(C4_3_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
-    relu <<< dimGrid4_3, dimBlock4_3 >>> (d_C4_3_feature_map, C4_3_channel, C4_3_size, C4_3_size, ceil(C4_3_size/TILE_WIDTH_QUARTER), TILE_WIDTH_QUARTER);
+                                    C4_2_size+2*conv4_3_padding_size, conv4_3_in_channel, conv4_3_out_channel, conv4_3_kernel_size, ceil(C4_3_size/TILE_WIDTH_4), TILE_WIDTH_4);
+    relu <<< dimGrid4_3, dimBlock4_3 >>> (d_C4_3_feature_map, C4_3_channel, C4_3_size, C4_3_size, ceil(C4_3_size/TILE_WIDTH_4), TILE_WIDTH_4);
 
-    dim3 dimGrid4_4(batch, S4_channel, ceil((S4_size*S4_size)/(TILE_WIDTH_EIGHTH*TILE_WIDTH_EIGHTH))); // batch*256*1
-    dim3 dimBlock4_4(TILE_WIDTH_EIGHTH,TILE_WIDTH_EIGHTH, 1); // 4*4*1
-    pool <<< dimGrid4_4, dimBlock4_4 >>> (d_C4_3_feature_map, d_S4_feature_map, S4_channel, S4_size, S4_size, ceil(S4_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
+    dim3 dimGrid4_4(batch, S4_channel, ceil((S4_size*S4_size)/(TILE_WIDTH_5*TILE_WIDTH_5))); // batch*256*1
+    dim3 dimBlock4_4(TILE_WIDTH_5,TILE_WIDTH_5, 1); // 4*4*1
+    pool <<< dimGrid4_4, dimBlock4_4 >>> (d_C4_3_feature_map, d_S4_feature_map, S4_channel, S4_size, S4_size, ceil(S4_size/TILE_WIDTH_5), TILE_WIDTH_5);
 
     //////////BLOCK 5/////////////////////////////////
 
-    dim3 dimGrid5_0(batch, S4_channel, ceil((S4_size*S4_size)/(TILE_WIDTH_EIGHTH*TILE_WIDTH_EIGHTH))); // batch*512*1
-    dim3 dimBlock5_0(TILE_WIDTH_EIGHTH,TILE_WIDTH_EIGHTH, 1); // 2*2*1
-    pad <<< dimGrid5_0, dimBlock5_0 >>> (d_S4_feature_map, d_S4_feature_map_padded, S4_channel, S4_size, S4_size, conv5_1_padding_size, ceil(S4_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
+    dim3 dimGrid5_0(batch, S4_channel, ceil((S4_size*S4_size)/(TILE_WIDTH_5*TILE_WIDTH_5))); // batch*512*1
+    dim3 dimBlock5_0(TILE_WIDTH_5,TILE_WIDTH_5, 1); // 2*2*1
+    pad <<< dimGrid5_0, dimBlock5_0 >>> (d_S4_feature_map, d_S4_feature_map_padded, S4_channel, S4_size, S4_size, conv5_1_padding_size, ceil(S4_size/TILE_WIDTH_5), TILE_WIDTH_5);
              
-    dim3 dimGrid5_1(batch, C5_1_channel, ceil((C5_1_size*C5_1_size)/(TILE_WIDTH_EIGHTH*TILE_WIDTH_EIGHTH))); // batch*512*1
-    dim3 dimBlock5_1(TILE_WIDTH_EIGHTH,TILE_WIDTH_EIGHTH, 1); // 2*2*1
-    size_t shmem_size_5 = sizeof(float) * ((TILE_WIDTH_EIGHTH + conv5_1_kernel_size-1)*(TILE_WIDTH_EIGHTH+conv5_1_kernel_size-1) + conv5_1_kernel_size*conv5_1_kernel_size);
+    dim3 dimGrid5_1(batch, C5_1_channel, ceil((C5_1_size*C5_1_size)/(TILE_WIDTH_5*TILE_WIDTH_5))); // batch*512*1
+    dim3 dimBlock5_1(TILE_WIDTH_5,TILE_WIDTH_5, 1); // 2*2*1
+    // size_t shmem_size_5 = sizeof(float) * ((TILE_WIDTH_5 + conv5_1_kernel_size-1)*(TILE_WIDTH_5+conv5_1_kernel_size-1) + conv5_1_kernel_size*conv5_1_kernel_size);
     // conv_shared <<< dimGrid5_1, dimBlock5_1, shmem_size_5>>> (d_S4_feature_map_padded, d_C5_1_feature_map, d_conv5_1_weight, d_conv5_1_bias, S4_size+2*conv5_1_padding_size,
     //     S4_size+2*conv5_1_padding_size, conv5_1_in_channel, conv5_1_out_channel, conv5_1_kernel_size, ceil(C5_1_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
     conv <<< dimGrid5_1, dimBlock5_1 >>> (d_S4_feature_map_padded, d_C5_1_feature_map, d_conv5_1_weight, d_conv5_1_bias, S4_size+2*conv5_1_padding_size,
-                                    S4_size+2*conv5_1_padding_size, conv5_1_in_channel, conv5_1_out_channel, conv5_1_kernel_size, ceil(C5_1_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
-    relu <<< dimGrid5_1, dimBlock5_1 >>> (d_C5_1_feature_map, C5_1_channel, C5_1_size, C5_1_size, ceil(C5_1_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
-    pad <<< dimGrid5_1, dimBlock5_1 >>> (d_C5_1_feature_map, d_C5_1_feature_map_padded, C5_1_channel, C5_1_size, C5_1_size, conv5_2_padding_size, ceil(C5_1_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
+                                    S4_size+2*conv5_1_padding_size, conv5_1_in_channel, conv5_1_out_channel, conv5_1_kernel_size, ceil(C5_1_size/TILE_WIDTH_5), TILE_WIDTH_5);
+    relu <<< dimGrid5_1, dimBlock5_1 >>> (d_C5_1_feature_map, C5_1_channel, C5_1_size, C5_1_size, ceil(C5_1_size/TILE_WIDTH_5), TILE_WIDTH_5);
+    pad <<< dimGrid5_1, dimBlock5_1 >>> (d_C5_1_feature_map, d_C5_1_feature_map_padded, C5_1_channel, C5_1_size, C5_1_size, conv5_2_padding_size, ceil(C5_1_size/TILE_WIDTH_5), TILE_WIDTH_5);
 
-    dim3 dimGrid5_2(batch, C5_2_channel, ceil((C5_2_size*C5_2_size)/(TILE_WIDTH_EIGHTH*TILE_WIDTH_EIGHTH))); // batch*512*1
-    dim3 dimBlock5_2(TILE_WIDTH_EIGHTH,TILE_WIDTH_EIGHTH, 1); // 2*2*1
+    dim3 dimGrid5_2(batch, C5_2_channel, ceil((C5_2_size*C5_2_size)/(TILE_WIDTH_5*TILE_WIDTH_5))); // batch*512*1
+    dim3 dimBlock5_2(TILE_WIDTH_5,TILE_WIDTH_5, 1); // 2*2*1
     // conv_shared <<< dimGrid5_2, dimBlock5_2, shmem_size_5 >>> (d_C5_1_feature_map_padded, d_C5_2_feature_map, d_conv5_2_weight, d_conv5_2_bias, C5_1_size+2*conv5_2_padding_size,
     //     C5_1_size+2*conv5_2_padding_size, conv5_2_in_channel, conv5_2_out_channel, conv5_2_kernel_size, ceil(C5_2_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
     conv <<< dimGrid5_2, dimBlock5_2 >>> (d_C5_1_feature_map_padded, d_C5_2_feature_map, d_conv5_2_weight, d_conv5_2_bias, C5_1_size+2*conv5_2_padding_size,
-                                    C5_1_size+2*conv5_2_padding_size, conv5_2_in_channel, conv5_2_out_channel, conv5_2_kernel_size, ceil(C5_2_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
-    relu <<< dimGrid5_2, dimBlock5_2 >>> (d_C5_2_feature_map, C5_2_channel, C5_2_size, C5_2_size, ceil(C5_2_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
-    pad <<< dimGrid5_2, dimBlock5_2 >>> (d_C5_2_feature_map, d_C5_2_feature_map_padded, C5_2_channel, C5_2_size, C5_2_size, conv5_3_padding_size, ceil(C5_2_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
+                                    C5_1_size+2*conv5_2_padding_size, conv5_2_in_channel, conv5_2_out_channel, conv5_2_kernel_size, ceil(C5_2_size/TILE_WIDTH_5), TILE_WIDTH_5);
+    relu <<< dimGrid5_2, dimBlock5_2 >>> (d_C5_2_feature_map, C5_2_channel, C5_2_size, C5_2_size, ceil(C5_2_size/TILE_WIDTH_5), TILE_WIDTH_5);
+    pad <<< dimGrid5_2, dimBlock5_2 >>> (d_C5_2_feature_map, d_C5_2_feature_map_padded, C5_2_channel, C5_2_size, C5_2_size, conv5_3_padding_size, ceil(C5_2_size/TILE_WIDTH_5), TILE_WIDTH_5);
 
-    dim3 dimGrid5_3(batch, C5_3_channel, ceil((C5_3_size*C5_3_size)/(TILE_WIDTH_EIGHTH*TILE_WIDTH_EIGHTH))); // batch*512*1
-    dim3 dimBlock5_3(TILE_WIDTH_EIGHTH,TILE_WIDTH_EIGHTH, 1); // 2*2*1
+    dim3 dimGrid5_3(batch, C5_3_channel, ceil((C5_3_size*C5_3_size)/(TILE_WIDTH_5*TILE_WIDTH_5))); // batch*512*1
+    dim3 dimBlock5_3(TILE_WIDTH_5,TILE_WIDTH_5, 1); // 2*2*1
     // conv_shared <<< dimGrid5_3, dimBlock5_3, shmem_size_5 >>> (d_C5_2_feature_map_padded, d_C5_3_feature_map, d_conv5_3_weight, d_conv5_3_bias, C5_2_size+2*conv5_3_padding_size,
     //     C5_2_size+2*conv5_3_padding_size, conv5_3_in_channel, conv5_3_out_channel, conv5_3_kernel_size, ceil(C5_3_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
     conv <<< dimGrid5_3, dimBlock5_3 >>> (d_C5_2_feature_map_padded, d_C5_3_feature_map, d_conv5_3_weight, d_conv5_3_bias, C5_2_size+2*conv5_3_padding_size,
-                                    C5_2_size+2*conv5_3_padding_size, conv5_3_in_channel, conv5_3_out_channel, conv5_3_kernel_size, ceil(C5_3_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
-    relu <<< dimGrid5_3, dimBlock5_3 >>> (d_C5_3_feature_map, C5_3_channel, C5_3_size, C5_3_size, ceil(C5_3_size/TILE_WIDTH_EIGHTH), TILE_WIDTH_EIGHTH);
+                                    C5_2_size+2*conv5_3_padding_size, conv5_3_in_channel, conv5_3_out_channel, conv5_3_kernel_size, ceil(C5_3_size/TILE_WIDTH_5), TILE_WIDTH_5);
+    relu <<< dimGrid5_3, dimBlock5_3 >>> (d_C5_3_feature_map, C5_3_channel, C5_3_size, C5_3_size, ceil(C5_3_size/TILE_WIDTH_5), TILE_WIDTH_5);
 
     dim3 dimGrid5_4(batch, S5_channel, 1); // batch*512*1
     dim3 dimBlock5_4(1,1,1); 
